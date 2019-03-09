@@ -20,8 +20,6 @@ namespace Chloe.PostgreSQL
         ISqlBuilder _sqlBuilder = new SqlBuilder();
         DbParamCollection _parameters = new DbParamCollection();
 
-        DbValueExpressionVisitor _valueExpressionVisitor;
-
         public static readonly Dictionary<string, IMethodHandler> MethodHandlers = GetMethodHandlers();
         static readonly Dictionary<string, Action<DbAggregateExpression, SqlGenerator>> AggregateHandlers = InitAggregateHandlers();
         static readonly Dictionary<MethodInfo, Action<DbBinaryExpression, SqlGenerator>> BinaryWithMethodHandlers = InitBinaryWithMethodHandlers();
@@ -73,17 +71,6 @@ namespace Chloe.PostgreSQL
 
         public ISqlBuilder SqlBuilder { get { return this._sqlBuilder; } }
         public List<DbParam> Parameters { get { return this._parameters.ToParameterList(); } }
-
-        DbValueExpressionVisitor ValueExpressionVisitor
-        {
-            get
-            {
-                if (this._valueExpressionVisitor == null)
-                    this._valueExpressionVisitor = new DbValueExpressionVisitor(this);
-
-                return this._valueExpressionVisitor;
-            }
-        }
 
         public static SqlGenerator CreateInstance()
         {
@@ -489,7 +476,7 @@ namespace Chloe.PostgreSQL
 
                 DbExpression valExp = DbExpressionExtension.StripInvalidConvert(item.Value);
                 AmendDbInfo(item.Key, valExp);
-                valExp.Accept(this.ValueExpressionVisitor);
+                DbValueExpressionTransformer.Transform(valExp).Accept(this);
                 separator = ",";
             }
 
@@ -528,7 +515,7 @@ namespace Chloe.PostgreSQL
 
                 DbExpression valExp = DbExpressionExtension.StripInvalidConvert(item.Value);
                 AmendDbInfo(item.Key, valExp);
-                valExp.Accept(this.ValueExpressionVisitor);
+                DbValueExpressionTransformer.Transform(valExp).Accept(this);
             }
 
             this.BuildWhereState(exp.Condition);
@@ -813,7 +800,7 @@ namespace Chloe.PostgreSQL
         }
         internal void AppendColumnSegment(DbColumnSegment seg)
         {
-            seg.Body.Accept(this.ValueExpressionVisitor);
+            DbValueExpressionTransformer.Transform(seg.Body).Accept(this);
             this._sqlBuilder.Append(" AS ");
             this.QuoteName(seg.Alias);
         }
@@ -865,15 +852,27 @@ namespace Chloe.PostgreSQL
             this.BuildGroupState(exp);
             this.BuildOrderState(exp.Orderings);
 
-            if (exp.SkipCount == null && exp.TakeCount == null)
-                return;
+            if (exp.SkipCount != null || exp.TakeCount != null)
+            {
+                int skipCount = exp.SkipCount ?? 0;
+                long takeCount = long.MaxValue;
+                if (exp.TakeCount != null)
+                    takeCount = exp.TakeCount.Value;
 
-            int skipCount = exp.SkipCount ?? 0;
-            long takeCount = long.MaxValue;
-            if (exp.TakeCount != null)
-                takeCount = exp.TakeCount.Value;
+                this._sqlBuilder.Append(" LIMIT ", takeCount.ToString(), " OFFSET ", skipCount.ToString());
+            }
 
-            this._sqlBuilder.Append(" LIMIT ", takeCount.ToString(), " OFFSET ", skipCount.ToString());
+            DbTableSegment seg = exp.Table.Table;
+            if (seg.Lock == LockType.UpdLock)
+            {
+                this._sqlBuilder.Append(" FOR UPDATE");
+            }
+            else if (seg.Lock == LockType.Unspecified || seg.Lock == LockType.NoLock)
+            {
+                //Do nothing.
+            }
+            else
+                throw new NotSupportedException($"lock type: {seg.Lock.ToString()}");
         }
 
 

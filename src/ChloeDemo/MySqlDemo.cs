@@ -10,7 +10,7 @@ namespace ChloeDemo
     class MySqlDemo
     {
         /* WARNING: DbContext 是非线程安全的，正式使用不能设置为 static，并且用完务必要调用 Dispose 方法销毁对象 */
-        static MySqlContext context = new MySqlContext(new MySqlConnectionFactory("Database='Chloe';Data Source=localhost;User ID=root;Password=sasa;CharSet=utf8;SslMode=None"));
+        static DbContext context = new MySqlContext(new MySqlConnectionFactory("Database='Chloe';Data Source=localhost;User ID=root;Password=sasa;CharSet=utf8;SslMode=None"));
         public static void Run()
         {
             BasicQuery();
@@ -313,6 +313,8 @@ namespace ChloeDemo
         }
         public static void Update()
         {
+            context.Update<User>(a => a.Id == 1, a => new User() { Name = a.Name, Age = a.Age + 1, Gender = Gender.Man, OpTime = DateTime.Now }, 1);
+
             context.Update<User>(a => a.Id == 1, a => new User() { Name = a.Name, Age = a.Age + 1, Gender = Gender.Man, OpTime = DateTime.Now });
             /*
              * UPDATE `Users` SET `Name`=`Users`.`Name`,`Age`=(`Users`.`Age` + 1),`Gender`=1,`OpTime`=NOW() WHERE `Users`.`Id` = 1
@@ -361,6 +363,8 @@ namespace ChloeDemo
         }
         public static void Delete()
         {
+            context.Delete<User>(a => a.Id == 1, 1);
+
             context.Delete<User>(a => a.Id == 1);
             /*
              * DELETE `Users` FROM `Users` WHERE `Users`.`Id` = 1
@@ -447,6 +451,9 @@ namespace ChloeDemo
 
                 Bool_Parse = bool.Parse("1"),//CAST(N'1' AS SIGNED)
                 DateTime_Parse = DateTime.Parse("2014-1-1"),//CAST(N'2014-1-1' AS DATETIME)
+
+                B = a.Age == null ? false : a.Age > 1, //三元表达式
+                CaseWhen = Case.When(a.Id > 100).Then(1).Else(0) //case when
             }).ToList();
 
             ConsoleHelper.WriteLineAndReadKey();

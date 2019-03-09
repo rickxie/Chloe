@@ -25,7 +25,7 @@ namespace Chloe.Query.QueryState
         {
             ScopeParameterDictionary scopeParameters = this._resultElement.ScopeParameters.Clone(exp.Predicate.Parameters[0], this._resultElement.MappingObjectExpression);
 
-            DbExpression whereCondition = FilterPredicateExpressionVisitor.ParseFilterPredicate(exp.Predicate, scopeParameters, this._resultElement.ScopeTables);
+            DbExpression whereCondition = FilterPredicateParser.Parse(exp.Predicate, scopeParameters, this._resultElement.ScopeTables);
             this._resultElement.AppendCondition(whereCondition);
 
             return this;
@@ -70,7 +70,7 @@ namespace Chloe.Query.QueryState
                 var arg = (LambdaExpression)argument;
                 ScopeParameterDictionary scopeParameters = this._resultElement.ScopeParameters.Clone(arg.Parameters[0], this._resultElement.MappingObjectExpression);
 
-                var dbArgument = GeneralExpressionVisitor.ParseLambda(arg, scopeParameters, this._resultElement.ScopeTables);
+                var dbArgument = GeneralExpressionParser.Parse(arg, scopeParameters, this._resultElement.ScopeTables);
                 dbArguments.Add(dbArgument);
             }
 
@@ -93,15 +93,14 @@ namespace Chloe.Query.QueryState
                 var keySelector = (LambdaExpression)item;
                 ScopeParameterDictionary scopeParameters = this._resultElement.ScopeParameters.Clone(keySelector.Parameters[0], this._resultElement.MappingObjectExpression);
 
-                var dbExp = GeneralExpressionVisitor.ParseLambda(keySelector, scopeParameters, this._resultElement.ScopeTables);
-                this._resultElement.GroupSegments.Add(dbExp);
+                this._resultElement.GroupSegments.AddRange(GroupKeySelectorParser.Parse(keySelector, scopeParameters, this._resultElement.ScopeTables));
             }
 
             foreach (LambdaExpression havingPredicate in exp.HavingPredicates)
             {
                 ScopeParameterDictionary scopeParameters = this._resultElement.ScopeParameters.Clone(havingPredicate.Parameters[0], this._resultElement.MappingObjectExpression);
 
-                var havingCondition = FilterPredicateExpressionVisitor.ParseFilterPredicate(havingPredicate, scopeParameters, this._resultElement.ScopeTables);
+                var havingCondition = FilterPredicateParser.Parse(havingPredicate, scopeParameters, this._resultElement.ScopeTables);
                 this._resultElement.AppendHavingCondition(havingCondition);
             }
 
@@ -116,7 +115,7 @@ namespace Chloe.Query.QueryState
 
                     ScopeParameterDictionary scopeParameters = this._resultElement.ScopeParameters.Clone(groupOrdering.KeySelector.Parameters[0], this._resultElement.MappingObjectExpression);
 
-                    DbExpression orderingDbExp = GeneralExpressionVisitor.ParseLambda(groupOrdering.KeySelector, scopeParameters, this._resultElement.ScopeTables);
+                    DbExpression orderingDbExp = GeneralExpressionParser.Parse(groupOrdering.KeySelector, scopeParameters, this._resultElement.ScopeTables);
 
                     DbOrdering ordering = new DbOrdering(orderingDbExp, groupOrdering.OrderType);
                     this._resultElement.Orderings.Add(ordering);
@@ -139,7 +138,7 @@ namespace Chloe.Query.QueryState
 
             ScopeParameterDictionary scopeParameters = this._resultElement.ScopeParameters.Clone(selector.Parameters[0], this._resultElement.MappingObjectExpression);
 
-            IMappingObjectExpression r = SelectorExpressionVisitor.ResolveSelectorExpression(selector, scopeParameters, this._resultElement.ScopeTables);
+            IMappingObjectExpression r = SelectorResolver.Resolve(selector, scopeParameters, this._resultElement.ScopeTables);
             result.MappingObjectExpression = r;
             result.Orderings.AddRange(this._resultElement.Orderings);
             result.AppendCondition(this._resultElement.Condition);
@@ -175,7 +174,7 @@ namespace Chloe.Query.QueryState
 
             ResultElement result = new ResultElement(this._resultElement.ScopeParameters, this._resultElement.ScopeTables);
 
-            DbTableSegment tableSeg = new DbTableSegment(subQuery, result.GenerateUniqueTableAlias());
+            DbTableSegment tableSeg = new DbTableSegment(subQuery, result.GenerateUniqueTableAlias(), LockType.Unspecified);
             DbFromTableExpression fromTable = new DbFromTableExpression(tableSeg);
 
             result.FromTable = fromTable;
@@ -239,7 +238,7 @@ namespace Chloe.Query.QueryState
         {
             ScopeParameterDictionary scopeParameters = this._resultElement.ScopeParameters.Clone(orderExp.KeySelector.Parameters[0], this._resultElement.MappingObjectExpression);
 
-            DbExpression dbExpression = GeneralExpressionVisitor.ParseLambda(orderExp.KeySelector, scopeParameters, this._resultElement.ScopeTables);
+            DbExpression dbExpression = GeneralExpressionParser.Parse(orderExp.KeySelector, scopeParameters, this._resultElement.ScopeTables);
             DbOrderType orderType;
             if (orderExp.NodeType == QueryExpressionType.OrderBy || orderExp.NodeType == QueryExpressionType.ThenBy)
             {
@@ -265,7 +264,7 @@ namespace Chloe.Query.QueryState
             DbSqlQueryExpression sqlQuery = this.CreateSqlQuery();
             DbSubQueryExpression subQuery = new DbSubQueryExpression(sqlQuery);
 
-            DbTableSegment tableSeg = new DbTableSegment(subQuery, alias);
+            DbTableSegment tableSeg = new DbTableSegment(subQuery, alias, LockType.Unspecified);
             DbFromTableExpression fromTable = new DbFromTableExpression(tableSeg);
 
             DbTable table = new DbTable(tableSeg.Alias);
@@ -282,14 +281,14 @@ namespace Chloe.Query.QueryState
             DbSubQueryExpression subQuery = new DbSubQueryExpression(sqlQuery);
 
             string alias = tableAlias;
-            DbTableSegment tableSeg = new DbTableSegment(subQuery, alias);
+            DbTableSegment tableSeg = new DbTableSegment(subQuery, alias, LockType.Unspecified);
 
             DbTable table = new DbTable(tableSeg.Alias);
             IMappingObjectExpression newMoe = this.Result.MappingObjectExpression.ToNewObjectExpression(sqlQuery, table);
 
             scopeParameters[conditionExpression.Parameters[conditionExpression.Parameters.Count - 1]] = newMoe;
 
-            DbExpression condition = GeneralExpressionVisitor.ParseLambda(conditionExpression, scopeParameters, scopeTables);
+            DbExpression condition = GeneralExpressionParser.Parse(conditionExpression, scopeParameters, scopeTables);
 
             DbJoinTableExpression joinTable = new DbJoinTableExpression(joinType.AsDbJoinType(), tableSeg, condition);
 

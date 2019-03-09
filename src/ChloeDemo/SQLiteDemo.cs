@@ -35,7 +35,7 @@ namespace ChloeDemo
         public static void BasicQuery()
         {
             IQuery<User> q = context.Query<User>();
-            
+
             q.Where(a => a.Id == 1).FirstOrDefault();
             /*
              * SELECT [Users].[Id] AS [Id],[Users].[Name] AS [Name],[Users].[Gender] AS [Gender],[Users].[Age] AS [Age],[Users].[CityId] AS [CityId],[Users].[OpTime] AS [OpTime] FROM [Users] AS [Users] WHERE [Users].[Id] = 1 LIMIT 1 OFFSET 0
@@ -50,7 +50,7 @@ namespace ChloeDemo
 
 
             //分页
-            q.Where(a => a.Id > 0).OrderBy(a => a.Age).Skip(20).Take(10).ToList();
+            var result = q.Where(a => a.Id > 0).OrderBy(a => a.Age).Skip(20).Take(10).ToList();
             /*
              * SELECT [Users].[Id] AS [Id],[Users].[Name] AS [Name],[Users].[Gender] AS [Gender],[Users].[Age] AS [Age],[Users].[CityId] AS [CityId],[Users].[OpTime] AS [OpTime] FROM [Users] AS [Users] WHERE [Users].[Id] > 0 ORDER BY [Users].[Age] ASC LIMIT 10 OFFSET 20
              */
@@ -455,6 +455,9 @@ namespace ChloeDemo
 
                 Bool_Parse = bool.Parse("1"),//CAST('1' AS INTEGER)
                 DateTime_Parse = DateTime.Parse("2014-01-01"),//DATETIME('2014-01-01')
+
+                B = a.Age == null ? false : a.Age > 1, //三元表达式
+                CaseWhen = Case.When(a.Id > 100).Then(1).Else(0) //case when
             }).ToList();
 
             ConsoleHelper.WriteLineAndReadKey();

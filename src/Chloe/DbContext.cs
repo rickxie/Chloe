@@ -65,16 +65,29 @@ namespace Chloe
         }
         public virtual IQuery<TEntity> Query<TEntity>(string table)
         {
-            return new Query<TEntity>(this, table);
+            return this.Query<TEntity>(table, LockType.Unspecified);
         }
+        public virtual IQuery<TEntity> Query<TEntity>(LockType @lock)
+        {
+            return this.Query<TEntity>(null, @lock);
+        }
+        public virtual IQuery<TEntity> Query<TEntity>(string table, LockType @lock)
+        {
+            return new Query<TEntity>(this, table, @lock);
+        }
+
         public virtual TEntity QueryByKey<TEntity>(object key, bool tracking = false)
         {
             return this.QueryByKey<TEntity>(key, null, tracking);
         }
         public virtual TEntity QueryByKey<TEntity>(object key, string table, bool tracking = false)
         {
+            return this.QueryByKey<TEntity>(key, table, LockType.Unspecified, tracking);
+        }
+        public virtual TEntity QueryByKey<TEntity>(object key, string table, LockType @lock, bool tracking = false)
+        {
             Expression<Func<TEntity, bool>> condition = BuildCondition<TEntity>(key);
-            var q = this.Query<TEntity>(table).Where(condition);
+            var q = this.Query<TEntity>(table, @lock).Where(condition);
 
             if (tracking)
                 q = q.AsTracking();
@@ -137,7 +150,7 @@ namespace Chloe
              * dbContext.SqlQuery<User>("select * from Users where Id=@Id", new { Id = 1 }).ToList();
              */
 
-            return this.SqlQuery<T>(sql, this.BuildParams(parameter));
+            return this.SqlQuery<T>(sql, PublicHelper.BuildParams(this, parameter));
         }
         public IEnumerable<T> SqlQuery<T>(string sql, CommandType cmdType, object parameter)
         {
@@ -146,7 +159,7 @@ namespace Chloe
              * dbContext.SqlQuery<User>("select * from Users where Id=@Id", CommandType.Text, new { Id = 1 }).ToList();
              */
 
-            return this.SqlQuery<T>(sql, cmdType, this.BuildParams(parameter));
+            return this.SqlQuery<T>(sql, cmdType, PublicHelper.BuildParams(this, parameter));
         }
 
 
@@ -305,7 +318,7 @@ namespace Chloe
             retIdentity = PublicHelper.ConvertObjType(retIdentity, typeDescriptor.AutoIncrement.PropertyType);
             return retIdentity;
         }
-        public virtual void InsertRange<TEntity>(List<TEntity> entities, bool keepIdentity = false)
+        public virtual void InsertRange<TEntity>(List<TEntity> entities, bool keepIdentity = false, string table = null)
         {
             throw new NotImplementedException();
         }

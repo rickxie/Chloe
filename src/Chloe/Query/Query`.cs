@@ -25,8 +25,8 @@ namespace Chloe.Query
 
         Type IQuery.ElementType { get { return typeof(T); } }
 
-        public Query(DbContext dbContext, string explicitTable)
-            : this(dbContext, new RootQueryExpression(typeof(T), explicitTable), false)
+        public Query(DbContext dbContext, string explicitTable, LockType @lock)
+            : this(dbContext, new RootQueryExpression(typeof(T), explicitTable, @lock), false)
         {
 
         }
@@ -307,7 +307,7 @@ namespace Chloe.Query
             return iterator.Single();
         }
         /// <summary>
-        /// 类<see cref="Chloe.Query.Visitors.GeneralExpressionVisitor"/>有引用该方法[反射]
+        /// 类<see cref="Chloe.Query.Visitors.GeneralExpressionParser"/>有引用该方法[反射]
         /// </summary>
         /// <typeparam name="TResult"></typeparam>
         /// <param name="method"></param>

@@ -12,10 +12,10 @@ namespace Chloe.PostgreSQL
     class DbExpressionTranslator : IDbExpressionTranslator
     {
         public static readonly DbExpressionTranslator Instance = new DbExpressionTranslator();
-        public string Translate(DbExpression expression, out List<DbParam> parameters)
+        public virtual string Translate(DbExpression expression, out List<DbParam> parameters)
         {
-            SqlGenerator generator = SqlGenerator.CreateInstance();
-            expression = DbExpressionOptimizer.Optimize(expression);
+            SqlGenerator generator = this.CreateSqlGenerator();
+            expression = EvaluableDbExpressionTransformer.Transform(expression);
             expression.Accept(generator);
 
             parameters = generator.Parameters;
@@ -23,21 +23,18 @@ namespace Chloe.PostgreSQL
 
             return sql;
         }
+        public virtual SqlGenerator CreateSqlGenerator()
+        {
+            return SqlGenerator.CreateInstance();
+        }
     }
 
-    class DbExpressionTranslator_ConvertToLowercase : IDbExpressionTranslator
+    class DbExpressionTranslator_ConvertToLowercase : DbExpressionTranslator
     {
-        public static readonly DbExpressionTranslator_ConvertToLowercase Instance = new DbExpressionTranslator_ConvertToLowercase();
-        public string Translate(DbExpression expression, out List<DbParam> parameters)
+        public static readonly new DbExpressionTranslator_ConvertToLowercase Instance = new DbExpressionTranslator_ConvertToLowercase();
+        public override SqlGenerator CreateSqlGenerator()
         {
-            SqlGenerator_ConvertToLowercase generator = new SqlGenerator_ConvertToLowercase();
-            expression = DbExpressionOptimizer.Optimize(expression);
-            expression.Accept(generator);
-
-            parameters = generator.Parameters;
-            string sql = generator.SqlBuilder.ToSql();
-
-            return sql;
+            return new SqlGenerator_ConvertToLowercase();
         }
     }
 }

@@ -45,33 +45,12 @@ namespace Chloe.SqlServer
 
             return keyValueMap;
         }
-        static SysType GetSysTypeByTypeName(string typeName)
-        {
-            SysType sysType;
-            if (SysTypes.TryGetValue(typeName, out sysType))
-            {
-                return sysType;
-            }
-
-            throw new NotSupportedException(string.Format("Does not Support systype '{0}'", typeName));
-        }
-        static T GetValue<T>(IDataReader reader, string name)
-        {
-            object val = reader.GetValue(reader.GetOrdinal(name));
-            if (val == DBNull.Value)
-            {
-                val = null;
-                return (T)val;
-            }
-
-            return (T)Convert.ChangeType(val, typeof(T).GetUnderlyingType());
-        }
-        static string AppendInsertRangeSqlTemplate(TypeDescriptor typeDescriptor, List<PropertyDescriptor> mappingPropertyDescriptors)
+        static string AppendInsertRangeSqlTemplate(DbTable table, List<PropertyDescriptor> mappingPropertyDescriptors)
         {
             StringBuilder sqlBuilder = new StringBuilder();
 
             sqlBuilder.Append("INSERT INTO ");
-            sqlBuilder.Append(AppendTableName(typeDescriptor.Table));
+            sqlBuilder.Append(AppendTableName(table));
             sqlBuilder.Append("(");
 
             for (int i = 0; i < mappingPropertyDescriptors.Count; i++)

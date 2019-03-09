@@ -23,8 +23,6 @@ namespace Chloe.Oracle
         ISqlBuilder _sqlBuilder = new SqlBuilder();
         DbParamCollection _parameters = new DbParamCollection();
 
-        DbValueExpressionVisitor _valueExpressionVisitor;
-
         public static readonly Dictionary<string, IMethodHandler> MethodHandlers = GetMethodHandlers();
         static readonly Dictionary<string, Action<DbAggregateExpression, SqlGenerator>> AggregateHandlers = InitAggregateHandlers();
         static readonly Dictionary<MethodInfo, Action<DbBinaryExpression, SqlGenerator>> BinaryWithMethodHandlers = InitBinaryWithMethodHandlers();
@@ -32,19 +30,8 @@ namespace Chloe.Oracle
         public static readonly Dictionary<Type, Type> NumericTypes;
         static readonly List<string> CacheParameterNames;
 
-        public static readonly ReadOnlyCollection<DbExpressionType> SafeDbExpressionTypes;
-
         static SqlGenerator()
         {
-            List<DbExpressionType> safeDbExpressionTypes = new List<DbExpressionType>();
-            safeDbExpressionTypes.Add(DbExpressionType.MemberAccess);
-            safeDbExpressionTypes.Add(DbExpressionType.ColumnAccess);
-            safeDbExpressionTypes.Add(DbExpressionType.Constant);
-            safeDbExpressionTypes.Add(DbExpressionType.Parameter);
-            safeDbExpressionTypes.Add(DbExpressionType.Convert);
-            SafeDbExpressionTypes = safeDbExpressionTypes.AsReadOnly();
-
-
             Dictionary<Type, string> castTypeMap = new Dictionary<Type, string>();
             //castTypeMap.Add(typeof(string), "NVARCHAR2"); // instead of using to_char(exp) 
             castTypeMap.Add(typeof(byte), "NUMBER(3,0)");
@@ -87,17 +74,6 @@ namespace Chloe.Oracle
 
         public ISqlBuilder SqlBuilder { get { return this._sqlBuilder; } }
         public List<DbParam> Parameters { get { return this._parameters.ToParameterList(); } }
-
-        DbValueExpressionVisitor ValueExpressionVisitor
-        {
-            get
-            {
-                if (this._valueExpressionVisitor == null)
-                    this._valueExpressionVisitor = new DbValueExpressionVisitor(this);
-
-                return this._valueExpressionVisitor;
-            }
-        }
 
         public static SqlGenerator CreateInstance()
         {
@@ -549,10 +525,37 @@ namespace Chloe.Oracle
 
                 DbExpression valExp = item.Value.StripInvalidConvert();
                 AmendDbInfo(item.Key, valExp);
-                valExp.Accept(this.ValueExpressionVisitor);
+                DbValueExpressionTransformer.Transform(valExp).Accept(this);
             }
 
             this._sqlBuilder.Append(")");
+
+            if (exp.Returns.Count > 0)
+            {
+                this._sqlBuilder.Append(" RETURNING ");
+
+                string outputParamNames = "";
+                for (int i = 0; i < exp.Returns.Count; i++)
+                {
+                    if (i > 0)
+                    {
+                        this._sqlBuilder.Append(",");
+                        outputParamNames = outputParamNames + ",";
+                    }
+
+                    DbColumn outputColumn = exp.Returns[i];
+                    string paramName = Utils.GenOutputColumnParameterName(outputColumn.Name);
+                    DbParam outputParam = new DbParam() { Name = paramName, DbType = outputColumn.DbType, Precision = outputColumn.Precision, Scale = outputColumn.Scale, Size = outputColumn.Size, Value = DBNull.Value, Direction = ParamDirection.Output };
+                    outputParam.Type = outputColumn.Type;
+
+                    this.QuoteName(outputColumn.Name);
+                    outputParamNames = outputParamNames + paramName;
+
+                    this._parameters.Add(outputParam);
+                }
+
+                this._sqlBuilder.Append(" INTO ", outputParamNames);
+            }
 
             return exp;
         }
@@ -575,7 +578,7 @@ namespace Chloe.Oracle
 
                 DbExpression valExp = item.Value.StripInvalidConvert();
                 AmendDbInfo(item.Key, valExp);
-                valExp.Accept(this.ValueExpressionVisitor);
+                DbValueExpressionTransformer.Transform(valExp).Accept(this);
             }
 
             this.BuildWhereState(exp.Condition);
@@ -905,7 +908,7 @@ namespace Chloe.Oracle
         }
         void AppendColumnSegment(DbColumnSegment seg)
         {
-            seg.Body.Accept(this.ValueExpressionVisitor);
+            DbValueExpressionTransformer.Transform(seg.Body).Accept(this);
             this._sqlBuilder.Append(" AS ");
             this.QuoteName(seg.Alias);
         }
@@ -959,6 +962,18 @@ namespace Chloe.Oracle
             this.BuildWhereState(exp.Condition);
             this.BuildGroupState(exp);
             this.BuildOrderState(exp.Orderings);
+
+            DbTableSegment seg = exp.Table.Table;
+            if (seg.Lock == LockType.UpdLock)
+            {
+                this._sqlBuilder.Append(" FOR UPDATE");
+            }
+            else if (seg.Lock == LockType.Unspecified || seg.Lock == LockType.NoLock)
+            {
+                //Do nothing.
+            }
+            else
+                throw new NotSupportedException($"lock type: {seg.Lock.ToString()}");
         }
 
 
@@ -1012,12 +1027,16 @@ namespace Chloe.Oracle
             }
         }
 
-        protected virtual void QuoteName(string name)
+        public virtual string SqlName(string name)
+        {
+            return name;
+        }
+        public virtual void QuoteName(string name)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentException("name");
 
-            this._sqlBuilder.Append("\"", name, "\"");
+            this._sqlBuilder.Append("\"", this.SqlName(name), "\"");
         }
         void AppendTable(DbTable table)
         {

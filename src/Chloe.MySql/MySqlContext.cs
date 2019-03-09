@@ -8,6 +8,7 @@ using Chloe.Infrastructure;
 using Chloe.Utility;
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -31,7 +32,7 @@ namespace Chloe.MySql
             get { return this._databaseProvider; }
         }
 
-        public override void InsertRange<TEntity>(List<TEntity> entities, bool keepIdentity = false)
+        public override void InsertRange<TEntity>(List<TEntity> entities, bool keepIdentity = false, string table = null)
         {
             /*
              * 将 entities 分批插入数据库
@@ -54,7 +55,8 @@ namespace Chloe.MySql
             List<PropertyDescriptor> mappingPropertyDescriptors = e.ToList();
             int maxDbParamsCount = maxParameters - mappingPropertyDescriptors.Count; /* 控制一个 sql 的参数个数 */
 
-            string sqlTemplate = AppendInsertRangeSqlTemplate(typeDescriptor, mappingPropertyDescriptors);
+            DbTable dbTable = string.IsNullOrEmpty(table) ? typeDescriptor.Table : new DbTable(table, typeDescriptor.Table.Schema);
+            string sqlTemplate = AppendInsertRangeSqlTemplate(dbTable, mappingPropertyDescriptors);
 
             Action insertAction = () =>
             {
@@ -151,12 +153,12 @@ namespace Chloe.MySql
             }
         }
 
-        static string AppendInsertRangeSqlTemplate(TypeDescriptor typeDescriptor, List<PropertyDescriptor> mappingPropertyDescriptors)
+        static string AppendInsertRangeSqlTemplate(DbTable table, List<PropertyDescriptor> mappingPropertyDescriptors)
         {
             StringBuilder sqlBuilder = new StringBuilder();
 
             sqlBuilder.Append("INSERT INTO ");
-            sqlBuilder.Append(AppendTableName(typeDescriptor.Table));
+            sqlBuilder.Append(AppendTableName(table));
             sqlBuilder.Append("(");
 
             for (int i = 0; i < mappingPropertyDescriptors.Count; i++)
@@ -178,5 +180,83 @@ namespace Chloe.MySql
             return Utils.QuoteName(table.Name);
         }
 
+        public virtual int Update<TEntity>(Expression<Func<TEntity, bool>> condition, Expression<Func<TEntity, TEntity>> content, int limits)
+        {
+            return this.Update<TEntity>(condition, content, null, limits);
+        }
+        public virtual int Update<TEntity>(Expression<Func<TEntity, bool>> condition, Expression<Func<TEntity, TEntity>> content, string table, int limits)
+        {
+            PublicHelper.CheckNull(condition);
+            PublicHelper.CheckNull(content);
+
+            TypeDescriptor typeDescriptor = EntityTypeContainer.GetDescriptor(typeof(TEntity));
+
+            Dictionary<MemberInfo, Expression> updateColumns = InitMemberExtractor.Extract(content);
+
+            DbTable explicitDbTable = null;
+            if (table != null)
+                explicitDbTable = new DbTable(table, typeDescriptor.Table.Schema);
+            DefaultExpressionParser expressionParser = typeDescriptor.GetExpressionParser(explicitDbTable);
+
+            DbExpression conditionExp = expressionParser.ParseFilterPredicate(condition);
+
+            MySqlDbUpdateExpression e = new MySqlDbUpdateExpression(explicitDbTable ?? typeDescriptor.Table, conditionExp);
+
+            foreach (var kv in updateColumns)
+            {
+                MemberInfo key = kv.Key;
+                PropertyDescriptor propertyDescriptor = typeDescriptor.TryGetPropertyDescriptor(key);
+
+                if (propertyDescriptor == null)
+                    throw new ChloeException(string.Format("The member '{0}' does not map any column.", key.Name));
+
+                if (propertyDescriptor.IsPrimaryKey)
+                    throw new ChloeException(string.Format("Could not update the primary key '{0}'.", propertyDescriptor.Column.Name));
+
+                if (propertyDescriptor.IsAutoIncrement)
+                    throw new ChloeException(string.Format("Could not update the identity column '{0}'.", propertyDescriptor.Column.Name));
+
+                e.UpdateColumns.Add(propertyDescriptor.Column, expressionParser.Parse(kv.Value));
+            }
+
+            e.Limits = limits;
+
+            if (e.UpdateColumns.Count == 0)
+                return 0;
+
+            return this.ExecuteSqlCommand(e);
+        }
+
+        public virtual int Delete<TEntity>(Expression<Func<TEntity, bool>> condition, int limits)
+        {
+            return this.Delete(condition, null, limits);
+        }
+        public virtual int Delete<TEntity>(Expression<Func<TEntity, bool>> condition, string table, int limits)
+        {
+            PublicHelper.CheckNull(condition);
+
+            TypeDescriptor typeDescriptor = EntityTypeContainer.GetDescriptor(typeof(TEntity));
+
+            DbTable explicitDbTable = null;
+            if (table != null)
+                explicitDbTable = new DbTable(table, typeDescriptor.Table.Schema);
+            DefaultExpressionParser expressionParser = typeDescriptor.GetExpressionParser(explicitDbTable);
+            DbExpression conditionExp = expressionParser.ParseFilterPredicate(condition);
+
+            MySqlDbDeleteExpression e = new MySqlDbDeleteExpression(explicitDbTable ?? typeDescriptor.Table, conditionExp);
+            e.Limits = limits;
+
+            return this.ExecuteSqlCommand(e);
+        }
+
+        int ExecuteSqlCommand(DbExpression e)
+        {
+            IDbExpressionTranslator translator = this.DatabaseProvider.CreateDbExpressionTranslator();
+            List<DbParam> parameters;
+            string cmdText = translator.Translate(e, out parameters);
+
+            int r = this.Session.ExecuteNonQuery(cmdText, CommandType.Text, parameters.ToArray());
+            return r;
+        }
     }
 }

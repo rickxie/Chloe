@@ -21,6 +21,9 @@ namespace Chloe.Oracle
             DbParam dbParam = dicVal as DbParam;
             if (dbParam != null)
             {
+                if (dbParam.Direction != ParamDirection.Input)
+                    return null;
+
                 if (value == DBNull.Value)
                 {
                     if (dbParam.Type == paramType)
@@ -38,11 +41,11 @@ namespace Chloe.Oracle
             List<DbParam> dbParamList = dicVal as List<DbParam>;
             if (value == DBNull.Value)
             {
-                return dbParamList.Find(a => a.Type == paramType);
+                return dbParamList.Find(a => a.Direction == ParamDirection.Input && a.Type == paramType);
             }
             else
             {
-                return dbParamList.Find(a => a.DbType == dbType);
+                return dbParamList.Find(a => a.Direction == ParamDirection.Input && a.DbType == dbType);
             }
         }
 
